@@ -17,22 +17,25 @@ db_dir=$base_dir/03_haplotype_grouping/JIC_AGIS/combined_by_windows_JIC_AGIS_fil
 out_dir=$base_dir/03_haplotype_grouping/JIC_AGIS/affinity
 mkdir -p $out_dir
 
-start=6000000
-end=6500000
-chromosome=chr5B
+chromosome=chr7A
+start=600000000
+end=550000000
+ibs_window=100000
 
 singularity exec --overlay \
 ~/overlays/python36_overlay.img \
 /software/4493852d-9831-4b90-a949-b7ea7039ce16/4493852d-9831-4b90-a949-b7ea7039ce16.img \
 python3 $script_dir/affinity_by_windows_v3.py \
--c $script_dir/chr5B_merged_in_windows__ws-100000_round-3_flank-50000.tsv \
+-c $script_dir/${chromosome}_merged_in_windows__ws-100000_round-3_flank-50000.tsv \
 -k $chromosome \
 -s $start \
 -e $end \
 -r chinese \
 -a CS \
 -n 19 \
--w 100000 \
+-w $ibs_window \
 -d samples_LC.tsv \
--o $out_dir/${chromosome}_19w_100kb_${start}_to_${end}_cleaned_bash.tsv \
--p /jic/scratch/groups/Cristobal-Uauy/quirozj/09_watseq/03_haplotype_grouping/combined_by_windows
+-o $out_dir/${chromosome}_19w_${ibs_window}kb_${start}_to_${end}_cleaned.tsv \
+-p /jic/scratch/groups/Cristobal-Uauy/quirozj/09_watseq/03_haplotype_grouping/JIC_AGIS/combined_by_windows_JIC_AGIS_filtered
+
+# /jic/scratch/groups/Cristobal-Uauy/quirozj/09_watseq/03_haplotype_grouping/JIC_AGIS/combined_by_windows_JIC_AGIS_filtered

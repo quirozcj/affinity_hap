@@ -84,10 +84,9 @@ reference_rename = {\
 # data_path = '/jic/scratch/groups/Cristobal-Uauy/quirozj/09_watseq/03_haplotype_grouping/JIC_AGIS/combined_by_windows_JIC_AGIS_filtered'
 # data_path = '/jic/scratch/groups/Cristobal-Uauy/quirozj/09_watseq/03_haplotype_grouping/combined_by_windows'
 
+# # def conversions_file(conversions_file,samples,chromosome,start_region,end_region,reference,assembly,window,num_of_windows,path_to_db):
 
-def conversions_file(conversions_file,drop_samples_l,chromosome,start_region,end_region,reference,assembly,window,num_of_windows,path_to_db_s):
-
-# def conversions_file(conversions_file,drop_samples_l,chromosome,start_region,end_region,reference,assembly,window,num_of_windows,path_to_db):
+def blocks_in_region(conversions_file, chromosome, start_region, end_region, reference, assembly):
 
     chromosome_sfx = chromosome+'__chi'
 
@@ -96,7 +95,7 @@ def conversions_file(conversions_file,drop_samples_l,chromosome,start_region,end
               delimiter='\t')
         )
 
-    by_region_df = \
+    region_df = \
     file_df[\
            (file_df['start'] >= start_region) & \
            (file_df['end'] <= end_region) & \
@@ -104,81 +103,70 @@ def conversions_file(conversions_file,drop_samples_l,chromosome,start_region,end
            (file_df['assembly'] == reference) \
             ]
 
-    (by_region_df
-        .sort_values(by=['block_no'],
-            inplace=True,
-            ascending=True)
-    )
+    blocks = (region_df
+            .sort_values(by=['start'],ascending=True)
+            ['block_no'].unique()
+            )
+
+    return blocks, file_df
 
 
-    blocks = \
-        (by_region_df
-        ['block_no']
-        .unique()
-        )
+def regions_in_blocks(file_df, blocks, chromosome, reference, assembly):
 
-    by_region_df = \
-        (file_df
-        [file_df
-        ['block_no']
+    chromosome_sfx = chromosome+'__chi'
+
+    target_region_df = \
+        (file_df[file_df['block_no']
         .isin(blocks)]
         )
 
-    by_region_df['reference'] = \
-        (by_region_df
-        ['reference']
+    target_region_df['reference'] = \
+        (target_region_df['reference']
         .map(reference_rename)
         )
 
-    by_region_df['assembly'] =  \
-        (by_region_df
-        ['assembly']
+    target_region_df['assembly'] =  \
+        (target_region_df['assembly']
         .map(reference_rename)
         )
 
+    target_region_df.loc[target_region_df.chromosome == chromosome_sfx,'reference'] = assembly
 
-    by_region_df.loc[by_region_df.chromosome == chromosome_sfx,'reference'] = assembly
-
-
-    by_region_df['mapped_size'] = \
-        (by_region_df['end'] - 
-        by_region_df['start']
+    target_region_df['mapped_size'] = \
+        (target_region_df['end'] - 
+        target_region_df['start']
         )
 
-    by_region_df['end'] = \
+    target_region_df['end'] = \
                         np.where(\
-                        (by_region_df['mapped_size'] > 50000) & \
-                        (by_region_df['mapped_size'] <= 100000), \
-                        by_region_df['start'] + 100000, \
-                        by_region_df['end'])
+                        (target_region_df['mapped_size'] > 50000) & \
+                        (target_region_df['mapped_size'] <= 100000), \
+                        target_region_df['start'] + 100000, \
+                        target_region_df['end'])
 
-    by_region_df['end'] = \
+    target_region_df['end'] = \
                         np.where(\
-                        by_region_df['mapped_size'] <= 50000, \
-                        by_region_df['start'] + 50000, \
-                        by_region_df['end'])
+                        target_region_df['mapped_size'] <= 50000, \
+                        target_region_df['start'] + 50000, \
+                        target_region_df['end'])
 
-    by_region_df['end'] = \
+    target_region_df['end'] = \
                         np.where(\
-                        by_region_df['mapped_size'] > 100000, \
-                        (np.around(by_region_df['mapped_size'], decimals = -5) + by_region_df['start']), \
-                        by_region_df['end'])
+                        target_region_df['mapped_size'] > 100000, \
+                        (np.around(target_region_df['mapped_size'], decimals = -5) + target_region_df['start']), \
+                        target_region_df['end'])
 
-    by_region_df['mapped_size'] = \
-            (by_region_df
-                ['end'] -
-                by_region_df
-                ['start']
+    target_region_df['mapped_size'] = \
+            (target_region_df['end'] -
+            target_region_df['start']
             )
 
+    return target_region_df
 
 
-
-    dampings = [0.5,0.6,0.7,0.8,0.9]
-    damping_list = header_prefix(dampings, 'dmp_')
-
-    references = by_region_df.reference.unique()
-
+def variations_by_windows(blocks, target_region_df, references, samples, chromosome, reference, window, num_of_windows, path_to_db, dampings,damping_list):
+    
+    # references = ['CS','Jagger','Arina']
 
     start_l = 0
     region_df = []
@@ -191,97 +179,78 @@ def conversions_file(conversions_file,drop_samples_l,chromosome,start_region,end
         for block in block_no:
 
             region_in_blocks = \
-                (by_region_df
-                    [by_region_df
+                (target_region_df
+                    [target_region_df
                     ['block_no'] == block]
                 )
 
             dfs = []
             for reference in references:
 
-                if region_in_blocks \
-                        [region_in_blocks
+                if region_in_blocks [region_in_blocks
                         ['reference'] == reference].empty:
                     continue
 
                 else:
-                    region_in_blocks_ = \
-                    (region_in_blocks
-                        [region_in_blocks
-                        ['reference'] == reference]
+                    region_in_blocks_ = (region_in_blocks
+                        [region_in_blocks['reference'] == reference]
                     )
 
                 if len(region_in_blocks_) > 1:
-                    down_region = \
-                    (region_in_blocks_
+
+                    down_region = (region_in_blocks_
                         .groupby(by=['reference'])
                         .agg({'start':'min'})
-                        .reset_index()['start']
-                        .values[0]
-                    )
+                        .reset_index()['start'].values[0]
+                        )
 
-                    up_region = \
-                    (region_in_blocks_
+                    up_region = (region_in_blocks_
                         .groupby(by=['reference'])
                         .agg({'end':'max'})
-                        .reset_index()['end']
-                        .values[0]
+                        .reset_index()['end'].values[0]
                     )
 
                 else:
                     down_region = \
-                    (int(region_in_blocks_
-                        [region_in_blocks_
-                        ['reference'] == reference]
-                        ['start'].values) 
+                    (int(region_in_blocks_[region_in_blocks_
+                        ['reference'] == reference]['start'].values) 
                     )
                     up_region = \
-                    (int(region_in_blocks_
-                        [region_in_blocks_
-                        ['reference'] == reference]
-                        ['end'].values)
+                    (int(region_in_blocks_[region_in_blocks_
+                        ['reference'] == reference]['end'].values)
                     )
 
-                
+
                 file_db = \
-                (pd.read_csv(f'{path_to_db_s}/{reference}_vs_all_variations_{window}_windows.tsv',
+                pd.read_csv(f'{path_to_db}/{reference}_vs_all_variations_{window}_windows.tsv',
                     delimiter='\t')
-                )
 
-                file_db = \
-                (file_db
-                    .drop(drop_samples_l,
-                        axis=1,
-                        errors='ignore')
-                )
+                file_db = (file_db
+                    .drop(samples,axis=1,errors='ignore')
+                    )
                 
-                region_df = get_target_region(file_db,
-                        chromosome,
-                        down_region,
-                        up_region)
+                extracted_region = get_target_region(file_db,chromosome,down_region,up_region)
 
-                dfs.append(region_df)
+                dfs.append(extracted_region)
 
             dfs_concat = pd.concat(dfs, join="inner")
             dfs_block.append(dfs_concat)
 
-        dfs_block_concat = \
-        pd.concat(dfs_block, join="inner")
+        dfs_block_concat = pd.concat(dfs_block, join="inner")
 
+        affinity_group = cluster_by_haplotype(dfs_block_concat, dampings)
 
-        affinity_group = \
-        cluster_by_haplotype(dfs_block_concat, dampings)
-
-        (affinity_group['block_no_start'],
-            affinity_group['block_no_end']) = block_no.min(),block_no.max()
+        affinity_group['block_no_start'], affinity_group['block_no_end'] = block_no.min(),block_no.max()
         
-        (region_df
-            .append(affinity_group)
-        )
+        
+        region_df.append(affinity_group)
 
-        start_l += num_of_windows + 2
+        start_l += num_of_windows + 1
+        # print(region_df)
 
     region_haplotype = pd.concat(region_df, axis=1, ignore_index=False)
+    # print(region_haplotype)
+    
 
     region_haplotype.index.names = ['query']
     region_haplotype.columns = ['_'.join(tuple(map(str, t))) for t in region_haplotype.columns.values]
@@ -308,7 +277,7 @@ def parse_arguments():
     parser.add_argument('-a', '--assembly')
     parser.add_argument('-n', '--num_of_windows', type=int)
     parser.add_argument('-w', '--window', type=int)
-    parser.add_argument('-d', '--drop_samples')
+    parser.add_argument('-d', '--drop_samples_f')
     parser.add_argument('-o', '--output')
     args = parser.parse_args()
     return args
@@ -322,12 +291,21 @@ def main():
     reference = args.reference
     assembly = args.assembly
     window = args.window
-    num_of_windows = args.num_of_windows
-    drop_samples_list = drop_samples(args.drop_samples)
-    path_to_db_s = args.path_to_db
-    
+    conversions_file = args.conversions_file
 
-    region_haplotype = conversions_file(args.conversions_file,drop_samples_list,chromosome,start_region,end_region,reference,assembly,window,num_of_windows,path_to_db_s)
+    blocks, file_df = blocks_in_region(conversions_file, chromosome, start_region, end_region, reference, assembly)
+    target_region_df = regions_in_blocks(file_df, blocks, chromosome, reference, assembly)
+    references = target_region_df.reference.unique()
+
+    num_of_windows = args.num_of_windows
+    path_to_db = args.path_to_db
+    samples = drop_samples(args.drop_samples_f)
+
+    dampings = [0.5,0.6,0.7,0.8,0.9]
+    damping_list = header_prefix(dampings, 'dmp_')
+
+    region_haplotype = variations_by_windows(blocks, target_region_df, references, samples, chromosome, reference, window, num_of_windows, path_to_db, dampings,damping_list)
+    print(region_haplotype)
     region_haplotype.to_csv(args.output, sep='\t', index=True)
 
 if __name__ == '__main__':
