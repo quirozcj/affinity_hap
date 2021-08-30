@@ -6,8 +6,13 @@ from sklearn.cluster import AffinityPropagation
 from warnings import filterwarnings
 filterwarnings('ignore')
 
+from datetime import datetime
 
-def get_target_region(by_windowd_db, chromosome, down_region, up_region, function=None, power_n=None):
+
+startTime = datetime.now()
+
+
+def get_target_region(by_windowd_db, reference, chromosome, down_region, up_region, function=None, power_n=None):
     
     if function is not None:
         function_name = function.__name__
@@ -17,8 +22,11 @@ def get_target_region(by_windowd_db, chromosome, down_region, up_region, functio
     target_region_df = in_db[\
                              (in_db['window'] >= down_region) & \
                              (in_db['window'] <= up_region) & \
-                             (in_db['seqname'].str.contains(chromosome))\
-                            ]
+                             (in_db['seqname'].str.contains(chromosome)) & \
+                             (in_db['reference'] == reference)
+                             ]
+    target_region_df.drop(columns=['reference'],inplace=True)
+
     header = target_region_df[['seqname','window']]
     df_values = target_region_df.iloc[:, 2:]
     
@@ -32,6 +40,7 @@ def get_target_region(by_windowd_db, chromosome, down_region, up_region, functio
         final_df = pd.concat([header, np_values], axis=1)
     else:
         final_df = target_region_df
+    
     return final_df
 
 
@@ -45,6 +54,8 @@ def transform_data (function, power_n = None):
 
 
 def cluster_by_haplotype (df, damping):
+
+    # df.drop(columns=['reference'],inplace=True)
     
     df_ = df.set_index(['seqname', 'window']).T
     df_ = df_.loc[:,~df_.columns.duplicated()]
@@ -81,10 +92,6 @@ reference_rename = {\
 'sy_mattis':'Mattis',
 'spelta':'Spelt'}
 
-# data_path = '/jic/scratch/groups/Cristobal-Uauy/quirozj/09_watseq/03_haplotype_grouping/JIC_AGIS/combined_by_windows_JIC_AGIS_filtered'
-# data_path = '/jic/scratch/groups/Cristobal-Uauy/quirozj/09_watseq/03_haplotype_grouping/combined_by_windows'
-
-# # def conversions_file(conversions_file,samples,chromosome,start_region,end_region,reference,assembly,window,num_of_windows,path_to_db):
 
 def blocks_in_region(conversions_file, chromosome, start_region, end_region, reference, assembly):
 
@@ -103,10 +110,8 @@ def blocks_in_region(conversions_file, chromosome, start_region, end_region, ref
            (file_df['assembly'] == reference) \
             ]
 
-    blocks = (region_df
-            .sort_values(by=['start'],ascending=True)
-            ['block_no'].unique()
-            )
+    blocks = region_df.sort_values(by=['end','start'],ascending=True)['block_no'].unique()
+            
 
     return blocks, file_df
 
@@ -164,14 +169,15 @@ def regions_in_blocks(file_df, blocks, chromosome, reference, assembly):
     return target_region_df
 
 
-def variations_by_windows(blocks, target_region_df, references, samples, chromosome, reference, window, num_of_windows, path_to_db, dampings,damping_list):
+
+def variations_by_windows(blocks, target_region_df, references, chromosome, window, num_of_windows, db_file, dampings,damping_list):
     
     # references = ['CS','Jagger','Arina']
 
     start_l = 0
     region_df = []
 
-    while start_l <= len(blocks):
+    while start_l <= len(blocks)-1:
         
         block_no = blocks[start_l:(start_l + num_of_windows)]
 
@@ -219,17 +225,8 @@ def variations_by_windows(blocks, target_region_df, references, samples, chromos
                     (int(region_in_blocks_[region_in_blocks_
                         ['reference'] == reference]['end'].values)
                     )
-
-
-                file_db = \
-                pd.read_csv(f'{path_to_db}/{reference}_vs_all_variations_{window}_windows.tsv',
-                    delimiter='\t')
-
-                file_db = (file_db
-                    .drop(samples,axis=1,errors='ignore')
-                    )
                 
-                extracted_region = get_target_region(file_db,chromosome,down_region,up_region)
+                extracted_region = get_target_region(db_file, reference, chromosome, down_region, up_region)
 
                 dfs.append(extracted_region)
 
@@ -237,6 +234,7 @@ def variations_by_windows(blocks, target_region_df, references, samples, chromos
             dfs_block.append(dfs_concat)
 
         dfs_block_concat = pd.concat(dfs_block, join="inner")
+        dfs_block_concat = dfs_block_concat.sort_values(by=['seqname','window'],ascending=True)
 
         affinity_group = cluster_by_haplotype(dfs_block_concat, dampings)
 
@@ -246,11 +244,9 @@ def variations_by_windows(blocks, target_region_df, references, samples, chromos
         region_df.append(affinity_group)
 
         start_l += num_of_windows + 1
-        # print(region_df)
 
     region_haplotype = pd.concat(region_df, axis=1, ignore_index=False)
-    # print(region_haplotype)
-    
+
 
     region_haplotype.index.names = ['query']
     region_haplotype.columns = ['_'.join(tuple(map(str, t))) for t in region_haplotype.columns.values]
@@ -263,6 +259,25 @@ def variations_by_windows(blocks, target_region_df, references, samples, chromos
                                      "block_no_end_": "block_no_end", \
                                      "block_no_start_": "block_no_start"}, inplace = True)
     return region_haplotype
+
+
+references_names = {\
+        'WhJag':'Jagger',
+        'WhAri':'Arina',
+        'Whjul':'Julius',
+        'Whlan':'Lancer',
+        'WhLan':'Landmark',
+        'Whmac':'Mace',
+        'WhSYM':'Mattis',
+        'WhNor':'Norin61',
+        'Whspe':'Spelt',
+        'WhSta':'Stanley'}
+
+def map_substring(s, dict_map):
+
+    for key in dict_map.keys():
+        if key in s: return dict_map[key]
+    return 'CS'
 
 
 def parse_arguments():
@@ -295,6 +310,9 @@ def main():
 
     blocks, file_df = blocks_in_region(conversions_file, chromosome, start_region, end_region, reference, assembly)
     target_region_df = regions_in_blocks(file_df, blocks, chromosome, reference, assembly)
+    target_blocks = target_region_df[target_region_df['reference']== assembly].sort_values(by=['start'],ascending=True)
+    blocks = target_blocks['block_no'].unique()
+
     references = target_region_df.reference.unique()
 
     num_of_windows = args.num_of_windows
@@ -304,9 +322,20 @@ def main():
     dampings = [0.5,0.6,0.7,0.8,0.9]
     damping_list = header_prefix(dampings, 'dmp_')
 
-    region_haplotype = variations_by_windows(blocks, target_region_df, references, samples, chromosome, reference, window, num_of_windows, path_to_db, dampings,damping_list)
-    print(region_haplotype)
+
+    db_file = file_db = pd.read_csv(f'{path_to_db}/{chromosome}_all_references_all_data.tsv', delimiter='\t')
+    db_file = db_file.drop(samples, axis=1, errors='ignore')
+
+
+    idx = 2
+    new_col = db_file['seqname'].apply(lambda x: map_substring(x, references_names))
+    db_file.insert(loc=idx, column='reference', value=new_col)
+
+
+    region_haplotype = variations_by_windows(blocks, target_region_df, references, chromosome, window, num_of_windows, db_file, dampings, damping_list)
     region_haplotype.to_csv(args.output, sep='\t', index=True)
+
+    print(datetime.now() - startTime)
 
 if __name__ == '__main__':
     main()
