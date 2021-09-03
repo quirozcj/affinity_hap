@@ -8,11 +8,11 @@
 #SBATCH --job-name=aff
 
 
-base_dir=/Users/quirozc/Documents/github/affinity_hap
-script_dir=$base_dir
-db_dir=$base_dir/test_data
-conversion_dir=$base_dir/test_data
-out_dir=$base_dir/out
+base_dir="."
+script_dir="$base_dir"
+db_dir="$base_dir/test_data"
+conversion_dir="$base_dir/test_data"
+out_dir="$base_dir/out"
 mkdir -p $out_dir
 
 chromosome=chr2B
