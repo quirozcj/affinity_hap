@@ -2,12 +2,9 @@ import pandas as pd
 import numpy as np
 import argparse
 from sklearn.cluster import AffinityPropagation
-
 from warnings import filterwarnings
 filterwarnings('ignore')
-
 from datetime import datetime
-
 
 startTime = datetime.now()
 
@@ -50,12 +47,11 @@ def transform_data (function, power_n = None):
         function_name = "None"
     else:
         function_name = function.__name__
+
     return function_name, function
 
 
 def cluster_by_haplotype (df, damping):
-
-    # df.drop(columns=['reference'],inplace=True)
     
     df_ = df.set_index(['seqname', 'window']).T
     df_ = df_.loc[:,~df_.columns.duplicated()]
@@ -79,6 +75,7 @@ def drop_samples(samples):
     samples_l = samples_LC['genotype'].to_list()
     return samples_l
 
+# delete hard coded by a file
 reference_rename = {\
 'arinalrfor': 'Arina',
 'jagger':'Jagger',
@@ -111,7 +108,6 @@ def blocks_in_region(conversions_file, chromosome, start_region, end_region, ref
             ]
 
     blocks = region_df.sort_values(by=['end','start'],ascending=True)['block_no'].unique()
-            
 
     return blocks, file_df
 
@@ -161,23 +157,30 @@ def regions_in_blocks(file_df, blocks, chromosome, reference, assembly):
                         (np.around(target_region_df['mapped_size'], decimals = -5) + target_region_df['start']), \
                         target_region_df['end'])
 
+    assembly_start = target_region_df['block_no'].str.split(r':|-', expand=True)[1]
+    assembly_end = target_region_df['block_no'].str.split(r':|-', expand=True)[2]
+
+    target_region_df.loc[target_region_df.assembly == target_region_df.reference,'start'] = assembly_start.astype(int)
+    target_region_df.loc[target_region_df.assembly == target_region_df.reference,'end'] = assembly_end.astype(int)
+
     target_region_df['mapped_size'] = \
-            (target_region_df['end'] -
-            target_region_df['start']
-            )
+        (target_region_df['end'] -
+        target_region_df['start']
+        )
+    pd.set_option('display.max_rows', None)
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', None)
 
     return target_region_df
-
 
 
 def variations_by_windows(blocks, target_region_df, references, chromosome, window, num_of_windows, db_file, dampings,damping_list):
     
     # references = ['CS','Jagger','Arina']
-
     start_l = 0
     region_df = []
 
-    while start_l <= len(blocks)-1:
+    while start_l < len(blocks):
         
         block_no = blocks[start_l:(start_l + num_of_windows)]
 
@@ -234,33 +237,50 @@ def variations_by_windows(blocks, target_region_df, references, chromosome, wind
             dfs_block.append(dfs_concat)
 
         dfs_block_concat = pd.concat(dfs_block, join="inner")
-        dfs_block_concat = dfs_block_concat.sort_values(by=['seqname','window'],ascending=True)
+        dfs_block_concat = dfs_block_concat.sort_values(by=['seqname','window'], ascending=True)
 
         affinity_group = cluster_by_haplotype(dfs_block_concat, dampings)
+        affinity_group['block_no_start'], affinity_group['block_no_end'] = block_no[0],block_no[-1]
 
-        affinity_group['block_no_start'], affinity_group['block_no_end'] = block_no.min(),block_no.max()
-        
-        
-        region_df.append(affinity_group)
+
+        affinity_group.index.names = ['query']
+        affinity_group.columns = ['_'.join(tuple(map(str, t))) for t in affinity_group.columns.values]
+        (affinity_group
+            .rename(columns={\
+                "dmp_0.9_": "dmp_0.9", \
+                "dmp_0.8_": "dmp_0.8", \
+                "dmp_0.7_": "dmp_0.7", \
+                "dmp_0.6_": "dmp_0.6",\
+                "dmp_0.5_": "dmp_0.5", \
+                "block_no_end_": "block_no_end", \
+                "block_no_start_": "block_no_start"}, inplace = True)
+        )
+
+        affinity_group.reset_index(level=0, inplace=True)
+
+        affinity_group = pd.melt(affinity_group,id_vars = ['query',
+                'dmp_0.9',
+                'dmp_0.8',
+                'dmp_0.7',
+                'dmp_0.6',
+                'dmp_0.5',
+                'block_no_start',
+                'block_no_end'],
+                var_name = 'window',
+                value_name = 'variations',
+                value_vars = affinity_group.iloc[:, 6:-2])
 
         start_l += num_of_windows + 1
+        region_df.append(affinity_group)
+    
+    region_haplotype = pd.concat(region_df, axis=0, ignore_index=False)
+    region_haplotype['sort_'] = region_haplotype['block_no_start'].str.split(r':|-', expand=True)[1].astype(int)
+    region_haplotype = region_haplotype.sort_values(by=['query','sort_'], ascending=True)
+    region_haplotype.drop(columns=['sort_'], inplace=True)
 
-    region_haplotype = pd.concat(region_df, axis=1, ignore_index=False)
-
-
-    region_haplotype.index.names = ['query']
-    region_haplotype.columns = ['_'.join(tuple(map(str, t))) for t in region_haplotype.columns.values]
-    region_haplotype.rename(columns={\
-                                     "dmp_0.9_": "dmp_0.9", \
-                                     "dmp_0.8_": "dmp_0.8", \
-                                     "dmp_0.7_": "dmp_0.7", \
-                                     "dmp_0.6_": "dmp_0.6",\
-                                     "dmp_0.5_": "dmp_0.5", \
-                                     "block_no_end_": "block_no_end", \
-                                     "block_no_start_": "block_no_start"}, inplace = True)
     return region_haplotype
 
-
+# merge with name conversion sabove
 references_names = {\
         'WhJag':'Jagger',
         'WhAri':'Arina',
@@ -281,6 +301,7 @@ def map_substring(s, dict_map):
 
 
 def parse_arguments():
+
     parser = argparse.ArgumentParser()
     
     parser.add_argument('-p', '--path_to_db')
@@ -295,9 +316,11 @@ def parse_arguments():
     parser.add_argument('-d', '--drop_samples_f')
     parser.add_argument('-o', '--output')
     args = parser.parse_args()
+
     return args
 
 def main():
+
     args = parse_arguments()
 
     chromosome = args.chromosome
@@ -323,7 +346,7 @@ def main():
     damping_list = header_prefix(dampings, 'dmp_')
 
 
-    db_file = file_db = pd.read_csv(f'{path_to_db}/{chromosome}_all_references_all_data.tsv', delimiter='\t')
+    db_file = file_db = pd.read_csv(f'{path_to_db}/{chromosome}_variations_references_combined_{window}bp.tsv', delimiter='\t')
     db_file = db_file.drop(samples, axis=1, errors='ignore')
 
 
@@ -333,7 +356,7 @@ def main():
 
 
     region_haplotype = variations_by_windows(blocks, target_region_df, references, chromosome, window, num_of_windows, db_file, dampings, damping_list)
-    region_haplotype.to_csv(args.output, sep='\t', index=True)
+    region_haplotype.to_csv(args.output, sep='\t', index=False)
 
     print(datetime.now() - startTime)
 
