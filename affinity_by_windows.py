@@ -16,10 +16,9 @@ def get_target_region(by_windowd_db, reference, chromosome, down_region, up_regi
     function_name = "None"
     
     in_db = by_windowd_db
-    target_region_df = in_db[\
-                             (in_db['window'] >= down_region) & \
-                             (in_db['window'] <= up_region) & \
-                             (in_db['seqname'].str.contains(chromosome)) & \
+    target_region_df = in_db[(in_db['window'] >= down_region) &
+                             (in_db['window'] <= up_region) &
+                             (in_db['seqname'].str.contains(chromosome)) &
                              (in_db['reference'] == reference)
                              ]
     target_region_df.drop(columns=['reference'],inplace=True)
@@ -31,23 +30,19 @@ def get_target_region(by_windowd_db, reference, chromosome, down_region, up_regi
         power_n = power_n        
         np_values = function(df_values, power_n)
         final_df = pd.concat([header, np_values], axis=1)
-    
     elif function is not None:
         np_values = function(df_values).replace(-np.inf, 0)
         final_df = pd.concat([header, np_values], axis=1)
     else:
         final_df = target_region_df
-    
     return final_df
 
 
-def transform_data (function, power_n = None):
-    
+def transform_data (function):
     if function is None:
         function_name = "None"
     else:
         function_name = function.__name__
-
     return function_name, function
 
 
@@ -90,83 +85,53 @@ reference_rename = {\
 'spelta':'Spelt'}
 
 
-def blocks_in_region(conversions_file, chromosome, start_region, end_region, reference, assembly):
-
+def blocks_in_region(conversions_file, chromosome, start_region, end_region, reference):
     chromosome_sfx = chromosome+'__chi'
-
-    file_df = \
-        (pd.read_csv(conversions_file,
-              delimiter='\t')
-        )
-
+    file_df =pd.read_csv(conversions_file, delimiter='\t')
     region_df = \
     file_df[\
-           (file_df['start'] >= start_region) & \
-           (file_df['end'] <= end_region) & \
-           (file_df['chromosome'] == chromosome_sfx) & \
-           (file_df['assembly'] == reference) \
+           (file_df['start'] >= start_region) & 
+           (file_df['end'] <= end_region) & 
+           (file_df['chromosome'] == chromosome_sfx) & 
+           (file_df['assembly'] == reference) 
             ]
 
     blocks = region_df.sort_values(by=['end','start'],ascending=True)['block_no'].unique()
-
     return blocks, file_df
 
+def add_region_size(target_region_df):
+    target_region_df['mapped_size'] = target_region_df['end'] - target_region_df['start'] 
 
 def regions_in_blocks(file_df, blocks, chromosome, reference, assembly):
-
     chromosome_sfx = chromosome+'__chi'
-
-    target_region_df = \
-        (file_df[file_df['block_no']
-        .isin(blocks)]
-        )
-
-    target_region_df['reference'] = \
-        (target_region_df['reference']
-        .map(reference_rename)
-        )
-
-    target_region_df['assembly'] =  \
-        (target_region_df['assembly']
-        .map(reference_rename)
-        )
-
+    target_region_df = file_df[file_df['block_no'].isin(blocks)]
+    target_region_df['reference'] = target_region_df['reference'].map(reference_rename)
+    target_region_df['assembly']  = target_region_df['assembly'].map(reference_rename)
     target_region_df.loc[target_region_df.chromosome == chromosome_sfx,'reference'] = assembly
+    add_region_size(target_region_df)
 
-    target_region_df['mapped_size'] = \
-        (target_region_df['end'] - 
-        target_region_df['start']
-        )
-
-    target_region_df['end'] = \
-                        np.where(\
-                        (target_region_df['mapped_size'] > 50000) & \
-                        (target_region_df['mapped_size'] <= 100000), \
-                        target_region_df['start'] + 100000, \
+    #Test to remove this part. Remove training "\"
+    target_region_df['end'] = np.where(
+                        (target_region_df['mapped_size'] > 50000) & 
+                        (target_region_df['mapped_size'] <= 100000), 
+                        target_region_df['start'] + 100000, 
                         target_region_df['end'])
-
-    target_region_df['end'] = \
-                        np.where(\
-                        target_region_df['mapped_size'] <= 50000, \
-                        target_region_df['start'] + 50000, \
+    target_region_df['end'] = np.where(
+                        target_region_df['mapped_size'] <= 50000, 
+                        target_region_df['start'] + 50000, 
                         target_region_df['end'])
-
-    target_region_df['end'] = \
-                        np.where(\
-                        target_region_df['mapped_size'] > 100000, \
-                        (np.around(target_region_df['mapped_size'], decimals = -5) + target_region_df['start']), \
+    target_region_df['end'] = np.where(
+                        target_region_df['mapped_size'] > 100000, 
+                        (np.around(target_region_df['mapped_size'], decimals = -5) + target_region_df['start']), 
                         target_region_df['end'])
 
     assembly_start = target_region_df['block_no'].str.split(r':|-', expand=True)[1]
-    assembly_end = target_region_df['block_no'].str.split(r':|-', expand=True)[2]
-
+    assembly_end   = target_region_df['block_no'].str.split(r':|-', expand=True)[2]
     target_region_df.loc[target_region_df.assembly == target_region_df.reference,'start'] = assembly_start.astype(int)
     target_region_df.loc[target_region_df.assembly == target_region_df.reference,'end'] = assembly_end.astype(int)
 
-    target_region_df['mapped_size'] = \
-        (target_region_df['end'] -
-        target_region_df['start']
-        )
+    add_region_size(target_region_df)
+        
     pd.set_option('display.max_rows', None)
     pd.set_option('display.max_columns', None)
     pd.set_option('display.width', None)
@@ -174,65 +139,24 @@ def regions_in_blocks(file_df, blocks, chromosome, reference, assembly):
     return target_region_df
 
 
-def variations_by_windows(blocks, target_region_df, references, chromosome, window, num_of_windows, db_file, dampings,damping_list):
+def variations_by_windows(blocks, target_region_df, references, chromosome, num_of_windows, db_file, dampings):
     
     # references = ['CS','Jagger','Arina']
     start_l = 0
     region_df = []
-
+    print(references)
     while start_l < len(blocks):
-        
         block_no = blocks[start_l:(start_l + num_of_windows)]
-
         dfs_block = []
         for block in block_no:
-
             region_in_blocks = \
                 (target_region_df
                     [target_region_df
                     ['block_no'] == block]
                 )
-
             dfs = []
-            for reference in references:
-
-                if region_in_blocks [region_in_blocks
-                        ['reference'] == reference].empty:
-                    continue
-
-                else:
-                    region_in_blocks_ = (region_in_blocks
-                        [region_in_blocks['reference'] == reference]
-                    )
-
-                if len(region_in_blocks_) > 1:
-
-                    down_region = (region_in_blocks_
-                        .groupby(by=['reference'])
-                        .agg({'start':'min'})
-                        .reset_index()['start'].values[0]
-                        )
-
-                    up_region = (region_in_blocks_
-                        .groupby(by=['reference'])
-                        .agg({'end':'max'})
-                        .reset_index()['end'].values[0]
-                    )
-
-                else:
-                    down_region = \
-                    (int(region_in_blocks_[region_in_blocks_
-                        ['reference'] == reference]['start'].values) 
-                    )
-                    up_region = \
-                    (int(region_in_blocks_[region_in_blocks_
-                        ['reference'] == reference]['end'].values)
-                    )
-                
-                extracted_region = get_target_region(db_file, reference, chromosome, down_region, up_region)
-
-                dfs.append(extracted_region)
-
+            extract_position_for_reference(references, chromosome, db_file, region_in_blocks, dfs)
+            
             dfs_concat = pd.concat(dfs, join="inner")
             dfs_block.append(dfs_concat)
 
@@ -279,6 +203,38 @@ def variations_by_windows(blocks, target_region_df, references, chromosome, wind
     region_haplotype.drop(columns=['sort_'], inplace=True)
 
     return region_haplotype
+
+def extract_position_for_reference(references, chromosome, db_file, region_in_blocks, dfs):
+    for reference in references:
+        if region_in_blocks [region_in_blocks
+                        ['reference'] == reference].empty:
+            continue
+        
+        region_in_blocks_ = region_in_blocks[region_in_blocks['reference'] == reference]
+        if len(region_in_blocks_) > 1:
+            down_region = (region_in_blocks_
+                        .groupby(by=['reference'])
+                        .agg({'start':'min'})
+                        .reset_index()['start'].values[0]
+                        )
+            up_region = (region_in_blocks_
+                        .groupby(by=['reference'])
+                        .agg({'end':'max'})
+                        .reset_index()['end'].values[0]
+                    )
+        else:
+            down_region = \
+                    (int(region_in_blocks_[region_in_blocks_
+                        ['reference'] == reference]['start'].values) 
+                    )
+            up_region = \
+                    (int(region_in_blocks_[region_in_blocks_
+                        ['reference'] == reference]['end'].values)
+                    )
+
+        extracted_region = get_target_region(db_file, reference, chromosome, down_region, up_region)
+        dfs.append(extracted_region)
+        
 
 # merge with name conversion sabove
 references_names = {\
@@ -331,7 +287,7 @@ def main():
     window = args.window
     conversions_file = args.conversions_file
 
-    blocks, file_df = blocks_in_region(conversions_file, chromosome, start_region, end_region, reference, assembly)
+    blocks, file_df = blocks_in_region(conversions_file, chromosome, start_region, end_region, reference)
     target_region_df = regions_in_blocks(file_df, blocks, chromosome, reference, assembly)
     target_blocks = target_region_df[target_region_df['reference']== assembly].sort_values(by=['start'],ascending=True)
     blocks = target_blocks['block_no'].unique()
@@ -355,7 +311,7 @@ def main():
     db_file.insert(loc=idx, column='reference', value=new_col)
 
 
-    region_haplotype = variations_by_windows(blocks, target_region_df, references, chromosome, window, num_of_windows, db_file, dampings, damping_list)
+    region_haplotype = variations_by_windows(blocks, target_region_df, references, chromosome, num_of_windows, db_file, dampings)
     region_haplotype.to_csv(args.output, sep='\t', index=False)
 
     print(datetime.now() - startTime)
