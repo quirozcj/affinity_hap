@@ -203,15 +203,17 @@ def main():
     chromosome = args.chromosome
     reference = args.assembly
     assembly = args.assembly
-    start_region, end_region = chr_region(args.chr_lengths, assembly, chromosome)
     window = args.window
+    num_of_windows = args.num_of_windows
+    start_region, end_region = chr_region(args.chr_lengths, assembly, chromosome)
+
     conversions_file = args.conversions_file
     blocks, file_df = blocks_in_region(conversions_file, start_region, end_region, assembly)
     target_region_df = regions_in_blocks(file_df, blocks, chromosome, assembly)
     target_blocks = target_region_df[target_region_df['reference'] == assembly].sort_values(by=['start'],ascending=True)
     blocks = target_blocks['block_no'].unique()
     references = args.references
-    num_of_windows = args.num_of_windows
+
     path_to_db = args.path_to_db
     samples = drop_samples(args.drop_samples_f)
     dampings = list(map(float, args.dampings))
@@ -220,14 +222,12 @@ def main():
 
     db_file = pd.read_csv(f'{path_to_db}/{chromosome}_variations_{window}w.tsv', delimiter='\t')
     db_file = db_file.filter(items=samples)
-    # db_file = db_file.drop(samples, axis=1, errors='ignore')
 
     idx = 2
     new_col = db_file['seqname'].apply(lambda x: map_substring(x, references_names))
     db_file.insert(loc=idx, column='reference', value=new_col)
 
     region_haplotype = variations_by_windows(blocks, target_region_df, references, chromosome, num_of_windows, db_file, dampings)
-    # print(region_haplotype)
 
     Y = StandardScaler(with_mean=True).fit_transform(region_haplotype['variations'].to_numpy().reshape(-1, 1))
     region_haplotype.insert(loc=6,  column='variations_scl', value=Y)
