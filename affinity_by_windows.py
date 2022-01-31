@@ -6,13 +6,15 @@ from datetime import datetime
 from sklearn.preprocessing import StandardScaler
 from sklearn import metrics
 from itertools import count
+from warnings import filterwarnings
+filterwarnings('ignore')
 
 startTime = datetime.now()
 
 def get_target_region(db_file, reference, down_region, up_region):
     target_region_df = db_file[(db_file['start'].between(down_region, up_region, inclusive='both')
         & (db_file['reference'] == reference))]
-    target_region_df.drop(columns=['reference'],inplace=True)
+    target_region_df.drop(columns=['reference'], inplace=True)
     return target_region_df
 
 def cluster_by_haplotype (df, dampings):
@@ -89,6 +91,7 @@ def variations_by_windows(blocks, target_region_df, references, chromosome, num_
             extract_position_for_reference(references, chromosome, db_file, region_in_blocks, dfs)
             dfs_concat = pd.concat(dfs, join="inner")
             dfs_block.append(dfs_concat)
+
         dfs_block_concat = pd.concat(dfs_block, join="inner")
         dfs_block_concat = dfs_block_concat.sort_values(by=['seqname','start','end'], ascending=True)
         affinity_group = cluster_by_haplotype(dfs_block_concat, dampings)
@@ -102,11 +105,13 @@ def variations_by_windows(blocks, target_region_df, references, chromosome, num_
         affinity_group['block_start'], affinity_group['block_end'] = block_no[0],block_no[-1]
         affinity_group.reset_index(level=0, inplace=True)
         melt_list = affinity_group.columns.values[:dmp_positions+1].tolist() + affinity_group.columns.values[-2:].tolist()
+
         affinity_group = pd.melt(affinity_group,
-                                id_vars = melt_list,
-                                var_name = 'window',
-                                value_name = 'variations',
-                                value_vars = affinity_group.iloc[:, (dmp_positions):-2])
+            id_vars=melt_list,
+            var_name='window',
+            value_name='variations',
+            value_vars=affinity_group.iloc[:, (dmp_positions+1):-2])
+
         if sliding_w == None:
             start_l += num_of_windows + 1
         else:
@@ -224,6 +229,7 @@ def main():
 
     db_file = pd.read_csv(f'{path_to_db}/{chromosome}_variations_{window}w.tsv', delimiter='\t')
     db_file = db_file.filter(items=samples)
+    # print(db_file)
 
     idx = 2
     new_col = db_file['seqname'].apply(lambda x: map_substring(x, references_names))
@@ -246,6 +252,7 @@ def main():
     region_haplotype['mean'] = grouped['variations'].transform('mean').round(1)
     region_haplotype['skew'] = grouped['variations'].transform('skew').round(2)
     region_haplotype.to_csv(args.output, sep='\t', index=False)
+    
     # print(region_haplotype)
     print(datetime.now() - startTime)
 

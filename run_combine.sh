@@ -3,8 +3,9 @@ test_data='./test_data'
 out_dir='./out'
 mkdir -p $out_dir
 
+# reference="jagger"
 reference="chinese"
-window=100000
+window=50000
 score='variations'
 
 python3 combine_by_windows.py \

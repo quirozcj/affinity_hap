@@ -1,11 +1,13 @@
-
-declare -a references=("chinese" "arinalrfor")
-
+declare -a references=("chinese" "jagger")
 chromosome='chr1A'
 window=50000
 
+db_dir='./out'
+out_dir='./out'
+mkdir -p $out_dir
+
 python3 merge_references.py \
--p ./test_data \
+-p $db_dir \
 -w ${window} \
 -r ${references[@]} \
 -k ${chromosome} \
